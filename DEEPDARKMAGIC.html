@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dark‑Mode‑Only Image Maker</title>
+  <style>
+    :root { --gap: 14px; --radius: 16px; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Apple SD Gothic Neo, "Malgun Gothic", sans-serif; margin: 0; }
+
+    header {
+      padding: 20px clamp(16px, 3vw, 40px);
+      border-bottom: 1px solid #e5e7eb;
+      display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: clamp(18px, 2.8vw, 24px); margin: 0; letter-spacing: .3px; }
+    header .sub { color: #6b7280; font-size: 13px; }
+
+    main { padding: 20px clamp(16px, 3vw, 40px); display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+    @media (min-width: 980px) {
+      main { grid-template-columns: 380px 1fr; align-items: start; }
+    }
+
+    .card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: var(--radius); box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    .panel { padding: 16px; display: grid; gap: 14px; }
+
+    .row { display: grid; gap: 8px; }
+    label { font-size: 13px; color: #374151; }
+    input[type="file"] { padding: 10px; border: 1px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; }
+
+    .controls { display: grid; gap: 10px; }
+    .controls .inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .controls button {
+      padding: 10px 14px; border-radius: 12px; border: 1px solid #e5e7eb; background: #111827; color: #fff; cursor: pointer;
+    }
+    .controls button.secondary { background: #fff; color: #111; }
+
+    .preview-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+    @media (min-width: 840px) {
+      .preview-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .surface { border-radius: var(--radius); overflow: hidden; border: 1px solid #e5e7eb; }
+    .surface header { display: flex; justify-content: space-between; align-items: center; border: 0; padding: 10px 12px; background: #f3f4f6; }
+    .surface header h3 { margin: 0; font-size: 13px; color: #374151; }
+    .surface .area { position: relative; aspect-ratio: 1.5 / 1; display: grid; place-items: center; }
+    .area.light { background: #ffffff; }
+    .area.dark { background: #0b0f17; }
+    .area .checker {
+      position: absolute; inset: 0; background-image: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), linear-gradient(-45deg, #f0f0f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f0f0f0 75%), linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+      background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; opacity: .4; pointer-events: none;
+    }
+
+    canvas { max-width: min(100%, 900px); width: 100%; height: auto; image-rendering: optimizeQuality; }
+
+    footer { padding: 30px; color: #6b7280; font-size: 12px; text-align: center; }
+    code.kbd { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; border: 1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Dark‑Mode‑Only Image Maker</h1>
+      <div class="sub">이미지를 투명 PNG로 변환해 다크 모드에서만 보이게 만들기</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card panel">
+      <div class="row">
+        <label for="file">1) 흑백(또는 컬러) 이미지 업로드</label>
+        <input type="file" id="file" accept="image/*" />
+      </div>
+
+      <div class="row">
+        <label>2) 모드 선택</label>
+        <div class="inline">
+          <label><input type="radio" name="mode" value="dark" checked /> 다크 전용(흰색 픽셀 + 알파)</label>
+          <label><input type="radio" name="mode" value="light" /> 라이트 전용(검은 픽셀 + 알파)</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="gamma">3) 감마(밝기 곡선): <span id="gammaVal">1.0</span></label>
+        <input type="range" id="gamma" min="0.2" max="2.2" value="1.0" step="0.05" />
+      </div>
+
+      <div class="controls">
+        <div class="inline">
+          <button id="process">변환하기</button>
+          <button id="download" class="secondary" disabled>PNG 다운로드</button>
+          <button id="reset" class="secondary">초기화</button>
+        </div>
+      </div>
+
+      <small>
+        • 다크 전용: 원본 밝기(0~1)를 알파로 사용하고 RGB=흰색으로 설정합니다. 어두운 배경에서만 보입니다.<br>
+        • 라이트 전용: (1-밝기)를 알파로 사용하고 RGB=검정으로 설정합니다. 밝은 배경에서만 보입니다.
+      </small>
+    </section>
+
+    <section class="preview-grid">
+      <div class="card surface">
+        <header><h3>라이트 배경 미리보기</h3></header>
+        <div class="area light">
+          <div class="checker"></div>
+          <canvas id="outLight"></canvas>
+        </div>
+      </div>
+      <div class="card surface">
+        <header><h3>다크 배경 미리보기</h3></header>
+        <div class="area dark">
+          <div class="checker"></div>
+          <canvas id="outDark"></canvas>
+        </div>
+      </div>
+
+      <div class="card surface" style="grid-column: 1 / -1;">
+        <header><h3>원본 이미지</h3></header>
+        <div class="area light">
+          <canvas id="orig"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    팁: 변환 이미지는 어디서나 투명 PNG로 동작합니다. 다크 전용으로 만든 경우, 흰 배경 위에서는 보이지 않고 검은 배경에서만 보입니다. 라이트 전용은 반대입니다.
+  </footer>
+
+  <script>
+    const fileInput = document.getElementById('file');
+    const processBtn = document.getElementById('process');
+    const resetBtn = document.getElementById('reset');
+    const downloadBtn = document.getElementById('download');
+    const gammaSlider = document.getElementById('gamma');
+    const gammaVal = document.getElementById('gammaVal');
+
+    const cOrig = document.getElementById('orig');
+    const cLight = document.getElementById('outLight');
+    const cDark = document.getElementById('outDark');
+
+    let imgBitmap = null;
+
+    gammaSlider.addEventListener('input', () => {
+      gammaVal.textContent = Number(gammaSlider.value).toFixed(2);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      fileInput.value = '';
+      imgBitmap = null;
+      [cOrig, cLight, cDark].forEach(c => { c.width = 0; c.height = 0; });
+      downloadBtn.disabled = true;
+    });
+
+    async function readImage(file) {
+      const blob = await createImageBitmap(file);
+      return blob; // ImageBitmap
+    }
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      imgBitmap = await readImage(file);
+      drawOriginal();
+    });
+
+    function drawOriginal() {
+      if (!imgBitmap) return;
+      cOrig.width = imgBitmap.width; cOrig.height = imgBitmap.height;
+      const ctx = cOrig.getContext('2d');
+      ctx.clearRect(0,0,cOrig.width,cOrig.height);
+      ctx.drawImage(imgBitmap, 0, 0);
+    }
+
+    processBtn.addEventListener('click', () => {
+      if (!imgBitmap) { alert('이미지를 먼저 업로드하세요.'); return; }
+      const mode = document.querySelector('input[name="mode"]:checked').value; // 'dark' | 'light'
+      const gamma = parseFloat(gammaSlider.value);
+
+      // Prepare working canvas
+      const off = new OffscreenCanvas(imgBitmap.width, imgBitmap.height);
+      const octx = off.getContext('2d');
+      octx.drawImage(imgBitmap, 0, 0);
+
+      const { width, height } = off;
+      const imageData = octx.getImageData(0, 0, width, height);
+      const data = imageData.data; // RGBA
+
+      // Precompute gamma curve: brightness^gamma
+      const gLUT = new Uint8ClampedArray(256);
+      for (let i = 0; i < 256; i++) {
+        const b = i / 255; // 0..1 brightness
+        const adj = Math.pow(b, gamma); // gamma apply
+        gLUT[i] = Math.round(adj * 255);
+      }
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        // luminance (perceptual)
+        const Y = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b); // 0..255
+        const Yg = gLUT[Y]; // gamma adjusted 0..255
+
+        if (mode === 'dark') {
+          // Dark-only: RGB=white, alpha = brightness
+          data[i] = 255; data[i+1] = 255; data[i+2] = 255; data[i+3] = Yg; // alpha
+        } else {
+          // Light-only: RGB=black, alpha = 1 - brightness
+          data[i] = 0; data[i+1] = 0; data[i+2] = 0; data[i+3] = 255 - Yg;
+        }
+      }
+
+      imageData.data.set(data);
+
+      // Put onto two visible canvases (same pixels)
+      [cLight, cDark].forEach(c => { c.width = imgBitmap.width; c.height = imgBitmap.height; });
+      const ctxL = cLight.getContext('2d');
+      const ctxD = cDark.getContext('2d');
+      ctxL.putImageData(imageData, 0, 0);
+      ctxD.putImageData(imageData, 0, 0);
+
+      // Enable download via an offscreen PNG export
+      const exp = new OffscreenCanvas(imgBitmap.width, imgBitmap.height);
+      const expCtx = exp.getContext('2d');
+      expCtx.putImageData(imageData, 0, 0);
+      exp.convertToBlob({ type: 'image/png' }).then(blob => {
+        const url = URL.createObjectURL(blob);
+        downloadBtn.disabled = false;
+        downloadBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `darkmode_${mode}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+      });
+    });
+  </script>
+</body>
+</html>
